@@ -1,13 +1,14 @@
-use crate::client::redis_client::RedisClient;
+use crate::store::redis_store::RedisStore;
+use anyhow::anyhow;
 use log::{debug, error};
 
 pub struct LocalFileEventHandler {
-    client: RedisClient,
+    store: RedisStore,
 }
 
 impl LocalFileEventHandler {
-    pub fn new(client: RedisClient) -> LocalFileEventHandler {
-        LocalFileEventHandler { client: client }
+    pub fn new(store: RedisStore) -> LocalFileEventHandler {
+        LocalFileEventHandler { store }
     }
 
     pub fn handle_event(&self, event: notify::DebouncedEvent) {
@@ -15,16 +16,23 @@ impl LocalFileEventHandler {
 
         debug!("got {:?}", event);
 
-        match event {
-            Create(_path) => (),
-            Write(_path) => (),
-            Remove(_path) => (),
-            Rename(_old_path, _new_path) => (),
-            NoticeWrite(_path) => (),  // do nothing
-            NoticeRemove(_path) => (), // do nothing
-            Chmod(_) => (),            // do nothing
-            Rescan => debug!("rescanning watched paths"),
-            Error(error, path) => error!("{} on path {:?}", error, path),
+        let res = match event {
+            Create(path) => self.store.new_file(path),
+            Write(_path) => Ok(()),
+            Remove(_path) => Ok(()),
+            Rename(_old_path, _new_path) => Ok(()),
+            NoticeWrite(_path) => Ok(()),  // do nothing
+            NoticeRemove(_path) => Ok(()), // do nothing
+            Chmod(_) => Ok(()),            // do nothing
+            Rescan => {
+                debug!("rescanning watched paths");
+                Ok(())
+            }
+            Error(error, path) => Err(anyhow!("Error: {} on path {:?}", error, path)),
+        };
+
+        if let Err(error) = res {
+            error!("Error when handling event: {:?}", error)
         }
     }
 }

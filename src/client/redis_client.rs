@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use r2d2_redis::{r2d2, RedisConnectionManager};
+use r2d2_redis::{r2d2, redis, RedisConnectionManager};
 
 type RedisConnection = r2d2::PooledConnection<r2d2_redis::RedisConnectionManager>;
 type RedisPool = r2d2::Pool<r2d2_redis::RedisConnectionManager>;
@@ -31,9 +31,32 @@ impl RedisClient {
         Ok(client)
     }
 
-    fn take_connection(pool: RedisPool) -> Result<RedisConnection> {
-        pool.get()
-            .context("unable to get Redis connection from pool before timeout")
+    pub fn set(&self, key: &str, value: &[u8]) -> Result<()> {
+        let mut connection = self.take_connection()?;
+        redis::cmd("SET")
+            .arg(key)
+            .arg(value)
+            .query(&mut *connection)
+            .context("error during the Redis query")?;
+        Ok(())
+    }
+
+    pub fn publish(&self, channel: &str, message: &str) -> Result<()> {
+        let mut connection = self.take_connection()?;
+        redis::cmd("PUBLISH")
+            .arg(channel)
+            .arg(message)
+            .query(&mut *connection)
+            .context("error during the Redis query")?;
+        Ok(())
+    }
+
+    fn take_connection(&self) -> Result<RedisConnection> {
+        let connection = self
+            .connection_pool
+            .get()
+            .context("unable to get redis connection")?;
+        Ok(connection)
     }
 
     fn ping_server(connection: &mut dyn r2d2_redis::redis::ConnectionLike) -> Result<()> {

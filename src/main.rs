@@ -43,7 +43,8 @@ fn main() -> Result<(), anyhow::Error> {
     debug!("Parsed CLI arguments: {:?}", cli_arguments);
 
     let client = client::redis_client::RedisClient::new(cli_arguments.redis_url)?;
-    let event_handler = event_handler::local_file::LocalFileEventHandler::new(client);
+    let store = store::redis_store::RedisStore::new(client);
+    let event_handler = event_handler::local_file::LocalFileEventHandler::new(store);
 
     if let Err(e) = watch(
         cli_arguments.paths_to_watch,
