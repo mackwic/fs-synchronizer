@@ -47,8 +47,20 @@ impl LocalFileEventHandler {
         debug!("[local_file] got {:?}", event);
 
         let res = match event {
-            Create(path) => self.store.new_file(self.unique_id, path),
-            Write(path) => self.store.modified_file(self.unique_id, path),
+            Create(path) => {
+                if path.is_dir() {
+                    debug!("path is directory, skipping (path={})", path.display());
+                    return;
+                }
+                self.store.new_file(self.unique_id, path)
+            }
+            Write(path) => {
+                if path.is_dir() {
+                    debug!("path is directory, skipping (path={})", path.display());
+                    return;
+                }
+                self.store.modified_file(self.unique_id, path)
+            }
             Remove(path) => self.store.removed_file(self.unique_id, path),
             Rename(old_path, new_path) => {
                 self.store.renamed_file(self.unique_id, old_path, new_path)
