@@ -1,8 +1,5 @@
-use log::{debug, info};
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use log::{debug, error, info};
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver};
-use std::time::Duration;
 use structopt::StructOpt;
 
 pub mod client {
@@ -40,41 +37,21 @@ struct Opt {
 fn main() -> Result<(), anyhow::Error> {
     let cli_arguments = Opt::from_args();
     logs::setup_logs(cli_arguments.debug);
-    debug!("Parsed CLI arguments: {:?}", cli_arguments);
+    debug!("[main] Parsed CLI arguments: {:?}", cli_arguments);
 
     let client = client::redis_client::RedisClient::new(cli_arguments.redis_url)?;
     let store = store::redis_store::RedisStore::new(client);
-    let event_handler = event_handler::local_file::LocalFileEventHandler::new(store);
-
-    if let Err(e) = watch(
+    let local_file_watcher = event_handler::local_file::LocalFileEventHandler::new(
+        store,
         cli_arguments.paths_to_watch,
         cli_arguments.event_bounce_ms,
-        event_handler,
-    ) {
-        panic!("FATAL ERROR when watching: {:?}", e)
-    }
+    );
 
+    let thread_handle = local_file_watcher.watch_events()?;
+
+    if thread_handle.join().is_err() {
+        error!("Thread terminated in error");
+    }
     info!("terminating");
     Ok(())
-}
-
-fn watch(
-    paths_to_watch: Vec<PathBuf>,
-    event_bounce_ms: u64,
-    handler: event_handler::local_file::LocalFileEventHandler,
-) -> notify::Result<Receiver<notify::DebouncedEvent>> {
-    let (tx, event_channel) = channel();
-    let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(event_bounce_ms))?;
-
-    for path in paths_to_watch {
-        debug!("watching {:?}", path);
-        (watcher.watch(path, RecursiveMode::Recursive))?;
-    }
-
-    loop {
-        match event_channel.recv() {
-            Ok(event) => handler.handle_event(event),
-            Err(e) => panic!("FATAL ERROR with the channel: {:?}", e),
-        }
-    }
 }

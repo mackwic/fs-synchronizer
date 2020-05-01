@@ -13,7 +13,7 @@ impl RemoteFileEventHandler {
     pub fn handle_event(&self, event: notify::DebouncedEvent) {
         use notify::DebouncedEvent::*;
 
-        debug!("got {:?}", event);
+        debug!("[remote_file] got {:?}", event);
 
         match event {
             Create(_path) => (),
@@ -23,7 +23,7 @@ impl RemoteFileEventHandler {
             NoticeWrite(_path) => (),  // do nothing
             NoticeRemove(_path) => (), // do nothing
             Chmod(_) => (),            // do nothing
-            Rescan => debug!("rescanning watched paths"),
+            Rescan => debug!("[remote_file] rescanning watched paths"),
             Error(error, path) => error!("{} on path {:?}", error, path),
         }
     }

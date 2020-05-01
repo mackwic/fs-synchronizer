@@ -24,5 +24,5 @@ pub fn setup_logs(is_debug: bool) {
         .apply()
         .expect("Unable to set logs !");
 
-    debug!("logs set !")
+    debug!("[logs] logs set !")
 }

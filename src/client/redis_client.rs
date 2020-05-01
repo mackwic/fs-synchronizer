@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use log::debug;
 use r2d2_redis::{r2d2, redis, RedisConnectionManager};
 
 type RedisConnection = r2d2::PooledConnection<r2d2_redis::RedisConnectionManager>;
@@ -32,8 +33,10 @@ impl RedisClient {
     }
 
     pub fn set(&self, key: &str, value: &[u8]) -> Result<()> {
+        debug!("[redis_client] sending HSET files {} <value>", key);
         let mut connection = self.take_connection()?;
-        redis::cmd("SET")
+        redis::cmd("HSET")
+            .arg("files")
             .arg(key)
             .arg(value)
             .query(&mut *connection)
@@ -42,6 +45,7 @@ impl RedisClient {
     }
 
     pub fn publish(&self, channel: &str, message: &str) -> Result<()> {
+        debug!("[redis_client] sending PUBLISH {} {}", channel, message);
         let mut connection = self.take_connection()?;
         redis::cmd("PUBLISH")
             .arg(channel)
