@@ -1,13 +1,13 @@
-use crate::redis_client::RedisClient;
+use crate::client::redis_client::RedisClient;
 use log::{debug, error};
 
-pub struct FileEventHandler {
-    _client: RedisClient,
+pub struct RemoteFileEventHandler {
+    client: RedisClient,
 }
 
-impl FileEventHandler {
-    pub fn new(client: RedisClient) -> FileEventHandler {
-        FileEventHandler { _client: client }
+impl RemoteFileEventHandler {
+    pub fn new(client: RedisClient) -> RemoteFileEventHandler {
+        RemoteFileEventHandler { client: client }
     }
 
     pub fn handle_event(&self, event: notify::DebouncedEvent) {

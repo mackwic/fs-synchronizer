@@ -5,9 +5,17 @@ use std::sync::mpsc::{channel, Receiver};
 use std::time::Duration;
 use structopt::StructOpt;
 
-pub mod event_handler;
+pub mod client {
+    pub mod redis_client;
+}
+pub mod event_handler {
+    pub mod local_file;
+    pub mod remote_file;
+}
+pub mod store {
+    pub mod redis_store;
+}
 pub mod logs;
-pub mod redis_client;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "fs-on-redis", about = "Synchronize the FS on a Redis DB")]
@@ -34,8 +42,8 @@ fn main() -> Result<(), anyhow::Error> {
     logs::setup_logs(cli_arguments.debug);
     debug!("Parsed CLI arguments: {:?}", cli_arguments);
 
-    let client = redis_client::RedisClient::new(cli_arguments.redis_url)?;
-    let event_handler = event_handler::FileEventHandler::new(client);
+    let client = client::redis_client::RedisClient::new(cli_arguments.redis_url)?;
+    let event_handler = event_handler::local_file::LocalFileEventHandler::new(client);
 
     if let Err(e) = watch(
         cli_arguments.paths_to_watch,
@@ -52,7 +60,7 @@ fn main() -> Result<(), anyhow::Error> {
 fn watch(
     paths_to_watch: Vec<PathBuf>,
     event_bounce_ms: u64,
-    handler: event_handler::FileEventHandler,
+    handler: event_handler::local_file::LocalFileEventHandler,
 ) -> notify::Result<Receiver<notify::DebouncedEvent>> {
     let (tx, event_channel) = channel();
     let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(event_bounce_ms))?;
