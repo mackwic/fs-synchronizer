@@ -9,6 +9,7 @@ use std::time::Duration;
 
 pub struct LocalFileEventHandler {
     event_bounce_ms: u64,
+    unique_id: u64,
     paths_to_watch: Vec<PathBuf>,
     store: RedisStore,
 }
@@ -16,11 +17,13 @@ pub struct LocalFileEventHandler {
 impl LocalFileEventHandler {
     pub fn new(
         store: RedisStore,
+        unique_id: u64,
         paths_to_watch: Vec<PathBuf>,
         event_bounce_ms: u64,
     ) -> LocalFileEventHandler {
         LocalFileEventHandler {
             event_bounce_ms,
+            unique_id,
             paths_to_watch,
             store,
         }
@@ -44,10 +47,12 @@ impl LocalFileEventHandler {
         debug!("[local_file] got {:?}", event);
 
         let res = match event {
-            Create(path) => self.store.new_file(path),
-            Write(_path) => Ok(()),
-            Remove(_path) => Ok(()),
-            Rename(_old_path, _new_path) => Ok(()),
+            Create(path) => self.store.new_file(self.unique_id, path),
+            Write(path) => self.store.modified_file(self.unique_id, path),
+            Remove(path) => self.store.removed_file(self.unique_id, path),
+            Rename(old_path, new_path) => {
+                self.store.renamed_file(self.unique_id, old_path, new_path)
+            }
             NoticeWrite(_path) => Ok(()),  // do nothing
             NoticeRemove(_path) => Ok(()), // do nothing
             Chmod(_) => Ok(()),            // do nothing

@@ -34,14 +34,44 @@ impl RedisClient {
     }
 
     pub fn set(&self, key: &str, value: &[u8]) -> Result<()> {
-        debug!("[redis_client] sending HSET files {} <value>", key);
+        debug!("[redis_client] sending SET {} <value>", key);
         let mut connection = self.take_connection()?;
-        redis::cmd("HSET")
-            .arg("files")
+        redis::cmd("SET")
             .arg(key)
             .arg(value)
             .query(&mut *connection)
-            .context("error during the Redis query")?;
+            .context("error during the Redis SET query")?;
+        Ok(())
+    }
+
+    pub fn get(&self, key: &str) -> Result<Vec<u8>> {
+        debug!("[redis_client] sending GET {}", key);
+        let mut connection = self.take_connection()?;
+        let bytes = redis::cmd("GET")
+            .arg(key)
+            .query::<Vec<u8>>(&mut *connection)
+            .context("error during the Redis GET query")?;
+        Ok(bytes)
+    }
+
+    pub fn rename(&self, old_key: &str, new_key: &str) -> Result<(), anyhow::Error> {
+        debug!("[redis_client] sending RENAME {} {}", old_key, new_key);
+        let mut connection = self.take_connection()?;
+        redis::cmd("RENAME")
+            .arg(old_key)
+            .arg(new_key)
+            .query::<()>(&mut *connection)
+            .context("error during the Redis RENAME query")?;
+        Ok(())
+    }
+
+    pub fn remove(&self, key: &str) -> Result<(), anyhow::Error> {
+        debug!("[redis_client] sending DEL {}", key);
+        let mut connection = self.take_connection()?;
+        redis::cmd("DEL")
+            .arg(key)
+            .query::<()>(&mut *connection)
+            .context("error during the Redis DEL query")?;
         Ok(())
     }
 
@@ -52,7 +82,7 @@ impl RedisClient {
             .arg(channel)
             .arg(message)
             .query(&mut *connection)
-            .context("error during the Redis query")?;
+            .context("error during the Redis PUBLISH query")?;
         Ok(())
     }
 

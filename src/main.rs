@@ -6,6 +6,7 @@ pub mod client {
     pub mod redis_client;
 }
 pub mod event_handler {
+    pub mod file_events;
     pub mod local_file;
     pub mod remote_file;
 }
@@ -32,6 +33,10 @@ struct Opt {
     /// Connection string to redis
     #[structopt(long, env)]
     redis_url: String,
+
+    /// Disable event deduplication
+    #[structopt(long)]
+    disable_event_dedup: bool,
 }
 
 fn main() -> Result<(), anyhow::Error> {
@@ -41,12 +46,22 @@ fn main() -> Result<(), anyhow::Error> {
 
     let client = client::redis_client::RedisClient::new(cli_arguments.redis_url)?;
     let store = store::redis_store::RedisStore::new(client.clone());
+    let unique_id: u64 = rand::random();
+
     let local_file_watcher = event_handler::local_file::LocalFileEventHandler::new(
-        store,
+        store.clone(),
+        unique_id,
         cli_arguments.paths_to_watch,
         cli_arguments.event_bounce_ms,
     );
-    let remote_file_watcher = event_handler::remote_file::RemoteFileEventHandler::new(client);
+
+    // change the unique id so that we never skip events
+    let remote_file_watcher = if cli_arguments.disable_event_dedup {
+        let unique_id = unique_id + 1;
+        event_handler::remote_file::RemoteFileEventHandler::new(client, store, unique_id)
+    } else {
+        event_handler::remote_file::RemoteFileEventHandler::new(client, store, unique_id)
+    };
 
     let thread_handles = vec![
         local_file_watcher.watch_events()?,

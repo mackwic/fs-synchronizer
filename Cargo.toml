@@ -14,4 +14,5 @@ fern = { version = "0.6", features = ["colored"] }
 log = "*"
 notify = "4.0.15"
 r2d2_redis = "0.13.0"
+rand = "0.7"
 structopt = "0.3"
