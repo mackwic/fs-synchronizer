@@ -92,12 +92,15 @@ impl RemoteFileEventHandler {
 
     fn rename_file(&self, old: String, new: String) -> Result<(), anyhow::Error> {
         debug!("[remote_file] renaming file from {} to {}", &old, &new);
+        // FIXME: make sure the parent directory exists
         std::fs::rename(&old, &new)
             .with_context(|| format!("unable to rename file from {} to {}", &old, &new))
     }
 
     fn write_file(&self, path: String) -> Result<(), anyhow::Error> {
         debug!("[remote_file] writing file {}", &path);
+
+        // FIXME: make sure the parent directory exists
         let contents = self
             .store
             .get_remote_file_content(&path)
