@@ -22,7 +22,7 @@ pub fn setup_logs(is_debug: bool) {
             ))
         })
         .apply()
-        .unwrap();
+        .expect("Unable to set logs !");
 
     debug!("logs set !")
 }
