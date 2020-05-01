@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone)]
 pub struct RedisStore {
     client: RedisClient,
 }

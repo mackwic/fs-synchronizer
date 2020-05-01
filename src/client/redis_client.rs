@@ -5,6 +5,7 @@ use r2d2_redis::{r2d2, redis, RedisConnectionManager};
 type RedisConnection = r2d2::PooledConnection<r2d2_redis::RedisConnectionManager>;
 type RedisPool = r2d2::Pool<r2d2_redis::RedisConnectionManager>;
 
+#[derive(Debug, Clone)]
 pub struct RedisClient {
     pub redis_url: String,
     connection_pool: RedisPool,
@@ -55,7 +56,7 @@ impl RedisClient {
         Ok(())
     }
 
-    fn take_connection(&self) -> Result<RedisConnection> {
+    pub fn take_connection(&self) -> Result<RedisConnection> {
         let connection = self
             .connection_pool
             .get()

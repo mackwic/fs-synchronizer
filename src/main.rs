@@ -40,18 +40,25 @@ fn main() -> Result<(), anyhow::Error> {
     debug!("[main] Parsed CLI arguments: {:?}", cli_arguments);
 
     let client = client::redis_client::RedisClient::new(cli_arguments.redis_url)?;
-    let store = store::redis_store::RedisStore::new(client);
+    let store = store::redis_store::RedisStore::new(client.clone());
     let local_file_watcher = event_handler::local_file::LocalFileEventHandler::new(
         store,
         cli_arguments.paths_to_watch,
         cli_arguments.event_bounce_ms,
     );
+    let remote_file_watcher = event_handler::remote_file::RemoteFileEventHandler::new(client);
 
-    let thread_handle = local_file_watcher.watch_events()?;
+    let thread_handles = vec![
+        local_file_watcher.watch_events()?,
+        remote_file_watcher.watch_events()?,
+    ];
 
-    if thread_handle.join().is_err() {
-        error!("Thread terminated in error");
+    for thread_handle in thread_handles {
+        if thread_handle.join().is_err() {
+            error!("Thread terminated in error");
+        }
     }
+
     info!("terminating");
     Ok(())
 }
