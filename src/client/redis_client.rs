@@ -151,6 +151,18 @@ impl RedisClient {
             .context("error during the Redis SMOVE query")?;
         Ok(())
     }
+
+    /// run redis SMEMBERS command: change a member name in a set
+    pub fn smembers(&self, set: &str) -> Result<Vec<String>> {
+        debug!("[redis_client] sending SMEMBERS {}", set);
+        let mut connection = self.take_connection()?;
+        let result = redis::cmd("SMEMBERS")
+            .arg(set)
+            .query::<Vec<String>>(&mut *connection)
+            .context("error during the Redis SMEMBERS query")?;
+        Ok(result)
+    }
+
     /// run redis MULTI command: open a new transaction
     pub fn multi(&self) -> Result<()> {
         debug!("[redis_client] sending MULTI (new transaction)",);

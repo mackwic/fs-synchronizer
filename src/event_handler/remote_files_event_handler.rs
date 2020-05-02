@@ -4,6 +4,7 @@ use crate::store::local_fs_store::LocalFSStore;
 use crate::store::redis_store::RedisStore;
 use anyhow::Context;
 use log::{debug, error};
+use std::path::PathBuf;
 use std::thread::JoinHandle;
 
 pub struct RemoteFilesEventHandler {
@@ -19,6 +20,43 @@ impl RemoteFilesEventHandler {
             store,
             unique_id,
         }
+    }
+
+    pub fn synchronize_local_files_with_remote(&self) -> Result<(), anyhow::Error> {
+        debug!("[remote_file] synchronizing all remote files to local fs");
+
+        let remote_files = self
+            .store
+            .get_all_remote_files()
+            .context("when synchronizing local files with remote files")?;
+
+        for path in remote_files {
+            debug!("[remote_file] retreiving {}...", path);
+            let path = PathBuf::from(path);
+            let contents = match self.store.get_remote_file_content(&path) {
+                Err(error) => {
+                    error!(
+                        "unable to retreive file {} from remote storage. Error: {:?}",
+                        &path.display(),
+                        error
+                    );
+                    continue;
+                }
+                Ok(content) => content,
+            };
+
+            if let Err(error) = LocalFSStore::write_file(&path, contents) {
+                error!(
+                    "unable to write file {} on local storage ! Error: {:?}",
+                    &path.display(),
+                    error
+                );
+                continue;
+            }
+        }
+
+        debug!("[remote_file] synchronization complete");
+        Ok(())
     }
 
     pub fn watch_events(self) -> Result<JoinHandle<()>, anyhow::Error> {

@@ -1,3 +1,4 @@
+use anyhow::Context;
 use log::{debug, error, info};
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -70,6 +71,10 @@ fn main() -> Result<(), anyhow::Error> {
             client, store, unique_id,
         )
     };
+
+    remote_file_watcher
+        .synchronize_local_files_with_remote()
+        .context("unable to make the first synchronization")?;
 
     let thread_handles = vec![
         local_file_watcher.watch_events()?,
