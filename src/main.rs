@@ -7,8 +7,8 @@ pub mod client {
 }
 pub mod event_handler {
     pub mod file_events;
-    pub mod local_file;
-    pub mod remote_file;
+    pub mod local_files_event_handler;
+    pub mod remote_files_event_handler;
 }
 pub mod store {
     pub mod local_fs_store;
@@ -52,19 +52,23 @@ fn main() -> Result<(), anyhow::Error> {
     let store = store::redis_store::RedisStore::new(client.clone());
     let unique_id: u64 = rand::random();
 
-    let local_file_watcher = event_handler::local_file::LocalFileEventHandler::new(
+    let local_file_watcher = event_handler::local_files_event_handler::LocalFilesEventHandler::new(
         store.clone(),
         unique_id,
         cli_arguments.paths_to_watch,
         cli_arguments.event_bounce_ms,
     );
 
-    // change the unique id so that we never skip events
+    // change the id so that we think it's another instance that emitted the events
     let remote_file_watcher = if cli_arguments.disable_event_dedup {
         let unique_id = unique_id + 1;
-        event_handler::remote_file::RemoteFileEventHandler::new(client, store, unique_id)
+        event_handler::remote_files_event_handler::RemoteFilesEventHandler::new(
+            client, store, unique_id,
+        )
     } else {
-        event_handler::remote_file::RemoteFileEventHandler::new(client, store, unique_id)
+        event_handler::remote_files_event_handler::RemoteFilesEventHandler::new(
+            client, store, unique_id,
+        )
     };
 
     let thread_handles = vec![

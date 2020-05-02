@@ -7,21 +7,21 @@ use std::sync::mpsc::channel;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-pub struct LocalFileEventHandler {
+pub struct LocalFilesEventHandler {
     event_bounce_ms: u64,
     unique_id: u64,
     paths_to_watch: Vec<PathBuf>,
     store: RedisStore,
 }
 
-impl LocalFileEventHandler {
+impl LocalFilesEventHandler {
     pub fn new(
         store: RedisStore,
         unique_id: u64,
         paths_to_watch: Vec<PathBuf>,
         event_bounce_ms: u64,
-    ) -> LocalFileEventHandler {
-        LocalFileEventHandler {
+    ) -> LocalFilesEventHandler {
+        LocalFilesEventHandler {
             event_bounce_ms,
             unique_id,
             paths_to_watch,

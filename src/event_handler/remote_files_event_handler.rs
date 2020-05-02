@@ -1,4 +1,4 @@
-use crate::client::redis_client::RedisClient;
+use crate::client::redis_client::{RedisClient, RedisPublishPayload};
 use crate::event_handler::file_events::{self, FileEvents};
 use crate::store::local_fs_store::LocalFSStore;
 use crate::store::redis_store::RedisStore;
@@ -6,15 +6,15 @@ use anyhow::Context;
 use log::{debug, error};
 use std::thread::JoinHandle;
 
-pub struct RemoteFileEventHandler {
+pub struct RemoteFilesEventHandler {
     client: RedisClient,
     store: RedisStore,
     unique_id: u64,
 }
 
-impl RemoteFileEventHandler {
-    pub fn new(client: RedisClient, store: RedisStore, unique_id: u64) -> RemoteFileEventHandler {
-        RemoteFileEventHandler {
+impl RemoteFilesEventHandler {
+    pub fn new(client: RedisClient, store: RedisStore, unique_id: u64) -> RemoteFilesEventHandler {
+        RemoteFilesEventHandler {
             client,
             store,
             unique_id,
@@ -47,40 +47,56 @@ impl RemoteFileEventHandler {
         loop {
             let msg = pubsub.get_message()?;
             let event_kind = msg.get_channel_name();
-            let payload: String = msg.get_payload()?;
-            let emitter_id: u64 = payload[0..20].parse()?;
-            let path: &str = &payload[21..];
+
+            let payload_res: Result<RedisPublishPayload, rmp_serde::decode::Error> =
+                rmp_serde::from_slice(msg.get_payload_bytes());
+
+            let payload = match payload_res {
+                Err(error) => {
+                    debug!(
+                        "error when decoding message. Skipping message. Detailed error: {:?}",
+                        error
+                    );
+                    continue;
+                }
+                Ok(payload) => payload,
+            };
             debug!(
-                "[remote_file] got message on channel '{}' from emitter {}: {}",
-                event_kind, emitter_id, path
+                "[remote_file] got message on channel '{}': {:?}",
+                event_kind, payload
             );
 
-            if emitter_id == self.unique_id {
+            if payload.get_emitter_id() == self.unique_id {
                 debug!("[remote_file] skipping event as we are the emitter");
                 continue;
             }
-            let handling_result = self.handle_event(event_kind, path);
+            let handling_result = self.handle_event(event_kind, payload);
             if let Err(error) = handling_result {
                 error!("Error when handling event: {:?}", error)
             }
         }
     }
 
-    fn handle_event(&self, event_kind: &str, path: &str) -> Result<(), anyhow::Error> {
-        debug!("[remote_file] got {} with {}", event_kind, path);
-
-        let event = file_events::FileEvents::from_str(event_kind, &[path])
+    fn handle_event(
+        &self,
+        event_kind: &str,
+        payload: RedisPublishPayload,
+    ) -> Result<(), anyhow::Error> {
+        let event = file_events::FileEvents::from_str_and_payload(event_kind, payload)
             .context("unable to convert the event to a known file event")?;
 
         let res = match event {
             FileEvents::New(path) | FileEvents::Modified(path) => {
                 let contents = self.store.get_remote_file_content(&path).with_context(|| {
-                    format!("unable to get from redis file content of {}", &path)
+                    format!(
+                        "unable to get from redis file content of {}",
+                        &path.display()
+                    )
                 })?;
-                LocalFSStore::write_file(path, contents)
+                LocalFSStore::write_file(&path, contents)
             }
-            FileEvents::Removed(path) => LocalFSStore::remove_file(path),
-            FileEvents::Renamed(old, new) => LocalFSStore::rename_file(old, new),
+            FileEvents::Removed(path) => LocalFSStore::remove_file(&path),
+            FileEvents::Renamed(old, new) => LocalFSStore::rename_file(&old, &new),
         };
 
         if res.is_err() {

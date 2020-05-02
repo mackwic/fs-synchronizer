@@ -1,114 +1,89 @@
-use crate::client::redis_client::RedisClient;
+use crate::client::redis_client::{RedisClient, RedisPublishPayload};
 use crate::event_handler::file_events;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct RedisStore {
     client: RedisClient,
 }
 
+const SET_OF_ALL_FILES_NAME : &str = "all_files";
+
 impl RedisStore {
     pub fn new(client: RedisClient) -> RedisStore {
         RedisStore { client }
     }
 
-    pub fn new_file(&self, emmiter_id: u64, path: PathBuf) -> Result<()> {
+    pub fn new_file(&self, emitter_id: u64, path: PathBuf) -> Result<()> {
         let content = self
             .get_local_file_content(path.clone())
             .context("while looking for new file content")?;
-        let path_as_str = match path.to_str() {
-            None => bail!(
-                "dropped file event because path is not a valid UTF-8 string. Path is {:?}",
-                path
-            ),
-            Some(path) => path,
-        };
-
-        let publish_value = RedisPublishValue::from_single_path(emmiter_id, path_as_str);
-
+        let publish_value = RedisPublishPayload::OnePathMessage(emitter_id, path.clone());
+        let path_as_str = &path.to_string_lossy();
+        
         self.client
             .in_transaction(|| {
                 self.client.set(path_as_str, &content)?;
-                self.client.sadd("file_set", path_as_str)?;
-                self.client.publish(file_events::FILE_NEW, publish_value.as_str())
+                self.client.sadd(SET_OF_ALL_FILES_NAME, path_as_str)?;
+                self.client.publish(file_events::FILE_NEW, publish_value)
             })
             .context("unable to send redis commands to set new file")
     }
 
-    pub fn modified_file(&self, emmiter_id: u64, path: PathBuf) -> Result<()> {
+    pub fn modified_file(&self, emitter_id: u64, path: PathBuf) -> Result<()> {
         let content = self.get_local_file_content(path.clone())?;
-        let path_as_str = match path.to_str() {
-            None => bail!(
-                "dropped file event because path is not a valid UTF-8 string. Path is {:?}",
-                path
-            ),
-            Some(path) => path,
-        };
-
-        let publish_value = RedisPublishValue::from_single_path(emmiter_id, path_as_str);
+        let publish_value = RedisPublishPayload::OnePathMessage(emitter_id, path.clone());
+        let path_as_str = &path.to_string_lossy();
 
         self.client
             .in_transaction(|| {
                 self.client.set(path_as_str, &content)?;
                 self.client
-                    .publish(file_events::FILE_MODIFIED, publish_value.as_str())
+                    .publish(file_events::FILE_MODIFIED, publish_value)
             })
             .context("unable to send the redis commands to modify the file")
     }
 
     pub fn renamed_file(
         &self,
-        emmiter_id: u64,
+        emitter_id: u64,
         old_path: PathBuf,
         new_path: PathBuf,
     ) -> Result<()> {
-        let (old_path_as_str, new_path_as_str) = match (old_path.to_str(), new_path.to_str()) {
-            (None, _) | (_, None) => bail!(
-                "dropped file event because path is not a valid UTF-8 string. Path are {:?} and {:?}",
-                old_path, new_path
-            ),
-            (Some(old_path), Some(new_path)) => (old_path, new_path),
-        };
-
-        let publish_value = RedisPublishValue::from_double_path(emmiter_id, old_path_as_str, new_path_as_str);
+        let publish_value = RedisPublishPayload::TwoPathMessage(emitter_id, old_path.clone(), new_path.clone());
+        let old_path_as_str = &old_path.to_string_lossy();
+        let new_path_as_str = &new_path.to_string_lossy();
 
         self.client
             .in_transaction(|| {
                 self.client.rename(old_path_as_str, new_path_as_str)?;
                 self.client
-                    .smove("file_set", old_path_as_str, new_path_as_str)?;
+                    .smove(SET_OF_ALL_FILES_NAME, old_path_as_str, new_path_as_str)?;
                 self.client
-                    .publish(file_events::FILE_RENAMED, publish_value.as_str())
+                    .publish(file_events::FILE_RENAMED, publish_value)
             })
             .context("unable to sned the redis commands to rename file")
     }
 
-    pub fn removed_file(&self, emmiter_id: u64, path: PathBuf) -> Result<()> {
-        let path_as_str = match path.to_str() {
-            None => bail!(
-                "dropped file event because path is not a valid UTF-8 string. Path is {:?}",
-                path
-            ),
-            Some(path) => path,
-        };
-
-        let publish_value = RedisPublishValue::from_single_path(emmiter_id, path_as_str);
+    pub fn removed_file(&self, emitter_id: u64, path: PathBuf) -> Result<()> {
+        let publish_value = RedisPublishPayload::OnePathMessage(emitter_id, path.clone());
+        let path_as_str = &path.to_string_lossy();
 
         self.client
             .in_transaction(|| {
                 self.client.remove(path_as_str)?;
-                self.client.srem("file_set", path_as_str)?;
+                self.client.srem(SET_OF_ALL_FILES_NAME, path_as_str)?;
                 self.client
-                    .publish(file_events::FILE_REMOVED, publish_value.as_str())
+                    .publish(file_events::FILE_REMOVED, publish_value)
             })
             .context("unable to send the redis commands to remove file")
     }
 
-    pub fn get_remote_file_content(&self, path: &str) -> Result<Vec<u8>> {
-        self.client.get(path)
+    pub fn get_remote_file_content(&self, path: &Path) -> Result<Vec<u8>> {
+        self.client.get(&path.to_string_lossy())
     }
 
     pub fn get_local_file_content(&self, path: PathBuf) -> Result<Vec<u8>> {
@@ -119,29 +94,5 @@ impl RedisStore {
         file.read_to_end(&mut contents)
             .with_context(|| format!("unable to read file {}", path.clone().display()))?;
         Ok(contents)
-    }
-}
-
-struct RedisPublishValue {
-    inner_value: String
-}
-
-impl RedisPublishValue {
-    pub fn from_single_path(emmiter_id: u64, path: &str) -> RedisPublishValue {
-        RedisPublishValue {
-            // left-pad the emitter id with 0 if needed so that the size is fixed
-            inner_value: format!("{:0>20}:{}", emmiter_id, path)
-        }
-    }
-
-    pub fn from_double_path(emmiter_id: u64, first_path: &str, second_path: &str) -> RedisPublishValue {
-        RedisPublishValue {
-            // left-pad the emitter id with 0 if needed so that the size is fixed
-            inner_value: format!("{:0>20}:{}:{}", emmiter_id, first_path, second_path)
-        }
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.inner_value
     }
 }

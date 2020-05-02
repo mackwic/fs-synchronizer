@@ -1,6 +1,8 @@
 use anyhow::{anyhow, bail, Context, Result};
 use log::{debug, error};
 use r2d2_redis::{r2d2, redis, RedisConnectionManager};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 type RedisConnection = r2d2::PooledConnection<r2d2_redis::RedisConnectionManager>;
 type RedisPool = r2d2::Pool<r2d2_redis::RedisConnectionManager>;
@@ -9,6 +11,23 @@ type RedisPool = r2d2::Pool<r2d2_redis::RedisConnectionManager>;
 pub struct RedisClient {
     pub redis_url: String,
     connection_pool: RedisPool,
+}
+
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
+pub enum RedisPublishPayload {
+    /// Emitter id, then Path
+    OnePathMessage(u64, PathBuf),
+    /// Emitter id, then Path, and Path
+    TwoPathMessage(u64, PathBuf, PathBuf),
+}
+
+impl RedisPublishPayload {
+    pub fn get_emitter_id(&self) -> u64 {
+        use RedisPublishPayload::*;
+        match self {
+            OnePathMessage(emitter_id, _) | TwoPathMessage(emitter_id, _, _) => *emitter_id,
+        }
+    }
 }
 
 impl RedisClient {
@@ -80,12 +99,14 @@ impl RedisClient {
     }
 
     /// run redis PUBLISH command: publish an event on the given channel
-    pub fn publish(&self, channel: &str, message: &str) -> Result<()> {
-        debug!("[redis_client] sending PUBLISH {} {}", channel, message);
+    pub fn publish(&self, channel: &str, message: RedisPublishPayload) -> Result<()> {
+        debug!("[redis_client] sending PUBLISH {} {:?}", channel, message);
         let mut connection = self.take_connection()?;
         redis::cmd("PUBLISH")
             .arg(channel)
-            .arg(message)
+            .arg(rmp_serde::to_vec(&message).expect(
+                "messagepack serialization of RedisPublishPayload messages should never fail",
+            ))
             .query(&mut *connection)
             .context("error during the Redis PUBLISH query")?;
         Ok(())
