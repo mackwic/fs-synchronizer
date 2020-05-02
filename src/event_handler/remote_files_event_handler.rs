@@ -90,7 +90,7 @@ impl RemoteFilesEventHandler {
             .context("unable to take connection to Redis server")?;
         let mut pubsub: r2d2_redis::redis::PubSub = connection.as_pubsub();
         pubsub
-            .psubscribe("files:*")
+            .psubscribe(file_events::FILE_EVENT)
             .context("unable to subscribe to redis channels `files:*`")?;
 
         loop {
@@ -143,6 +143,10 @@ impl RemoteFilesEventHandler {
                     )
                 })?;
 
+                debug!(
+                    "[remote_file] local_hash = {} remote_hash = {}",
+                    local_hash, remote_hash
+                );
                 if local_hash == remote_hash {
                     debug!("[remote_file] hash matches. Doing nothing.");
                     return Ok(());
