@@ -3,25 +3,21 @@ use anyhow::bail;
 use std::path::PathBuf;
 
 pub enum FileEvents {
-    New(PathBuf),
-    Modified(PathBuf),
+    /// (absolute path, hash)
+    New(PathBuf, u64),
+    /// (absolute path, hash)
+    Modified(PathBuf, u64),
+    /// (absolute path)
     Removed(PathBuf),
+    /// (absolute path, hash)
     Renamed(PathBuf, PathBuf),
 }
 
-pub static FILE_NEW: &str = "files:new";
-pub static FILE_MODIFIED: &str = "files:modified";
-pub static FILE_RENAMED: &str = "files:renamed";
-pub static FILE_REMOVED: &str = "files:removed";
+pub static FILE_EVENT: &str = "file_event";
 
 impl FileEvents {
     pub fn kind_as_str(&self) -> &str {
-        match self {
-            FileEvents::New(_) => FILE_NEW,
-            FileEvents::Modified(_) => FILE_MODIFIED,
-            FileEvents::Removed(_) => FILE_REMOVED,
-            FileEvents::Renamed(_, _) => FILE_RENAMED,
-        }
+        FILE_EVENT
     }
 
     pub fn from_str_and_payload(
@@ -30,16 +26,15 @@ impl FileEvents {
     ) -> Result<FileEvents, anyhow::Error> {
         use RedisPublishPayload::*;
 
-        let event = match (kind, payload) {
-            ("files:new", OnePathMessage(_, path)) => FileEvents::New(path),
-            ("files:modified", OnePathMessage(_, path)) => FileEvents::Modified(path),
-            ("files:removed", OnePathMessage(_, path)) => FileEvents::Removed(path),
-            ("files:renamed", TwoPathMessage(_, old, new)) => FileEvents::Renamed(old, new),
-            (invalid_kind, invalid_payload) => bail!(
-                "file event kind/payload has an invalid combination: {}/{:?}",
-                invalid_kind,
-                invalid_payload
-            ),
+        if kind != FILE_EVENT {
+            bail!("unknown event kind: {}", kind,);
+        }
+
+        let event = match payload {
+            NewFile(_, hash, path) => FileEvents::New(path, hash),
+            ModifiedFile(_, hash, path) => FileEvents::Modified(path, hash),
+            RemovedFile(_, path) => FileEvents::Removed(path),
+            RenamedFile(_, old, new) => FileEvents::Renamed(old, new),
         };
         Ok(event)
     }

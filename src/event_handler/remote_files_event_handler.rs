@@ -33,6 +33,17 @@ impl RemoteFilesEventHandler {
         for path in remote_files {
             debug!("[remote_file] retreiving {}...", path);
             let path = PathBuf::from(path);
+            // XXX remote hash reading is non-fatal. Anything could be in redis.
+            // local hash reading is also non-fatal. Maybe the file is not there. We will try to write it to see.
+            // In any case, hust use a dummy default value
+            let remote_hash = self.store.get_remote_file_hash(&path).unwrap_or(0);
+            let local_hash = LocalFSStore::local_hash(&path).unwrap_or(1);
+
+            if remote_hash == local_hash {
+                debug!("[remote_file] local hash matches remote hash. Skipping file.");
+                continue;
+            }
+
             let contents = match self.store.get_remote_file_content(&path) {
                 Err(error) => {
                     error!(
@@ -124,7 +135,19 @@ impl RemoteFilesEventHandler {
             .context("unable to convert the event to a known file event")?;
 
         let res = match event {
-            FileEvents::New(path) | FileEvents::Modified(path) => {
+            FileEvents::New(path, remote_hash) | FileEvents::Modified(path, remote_hash) => {
+                let local_hash = LocalFSStore::local_hash(&path).with_context(|| {
+                    format!(
+                        "unable to compute hash of file for comparison. Path: {}",
+                        &path.display()
+                    )
+                })?;
+
+                if local_hash == remote_hash {
+                    debug!("[remote_file] hash matches. Doing nothing.");
+                    return Ok(());
+                }
+
                 let contents = self.store.get_remote_file_content(&path).with_context(|| {
                     format!(
                         "unable to get from redis file content of {}",

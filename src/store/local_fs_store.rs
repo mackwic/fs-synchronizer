@@ -1,5 +1,7 @@
 use anyhow::Context;
 use log::debug;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
 use std::path::Path;
 
 pub struct LocalFSStore;
@@ -48,5 +50,12 @@ impl LocalFSStore {
                 )
             })
         }
+    }
+
+    pub fn local_hash(path: &Path) -> Result<u64, anyhow::Error> {
+        let mut hasher = DefaultHasher::default();
+        let contents = std::fs::read(&path).context("unable to read file for hashing")?;
+        hasher.write(&*contents);
+        Ok(hasher.finish())
     }
 }

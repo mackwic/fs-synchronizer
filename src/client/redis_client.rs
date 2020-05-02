@@ -15,17 +15,24 @@ pub struct RedisClient {
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub enum RedisPublishPayload {
+    /// Emitter id, hash, then Path
+    NewFile(u64, u64, PathBuf),
+    /// Emitter id, hash, then Path
+    ModifiedFile(u64, u64, PathBuf),
     /// Emitter id, then Path
-    OnePathMessage(u64, PathBuf),
+    RemovedFile(u64, PathBuf),
     /// Emitter id, then Path, and Path
-    TwoPathMessage(u64, PathBuf, PathBuf),
+    RenamedFile(u64, PathBuf, PathBuf),
 }
 
 impl RedisPublishPayload {
     pub fn get_emitter_id(&self) -> u64 {
         use RedisPublishPayload::*;
         match self {
-            OnePathMessage(emitter_id, _) | TwoPathMessage(emitter_id, _, _) => *emitter_id,
+            NewFile(emitter_id, _, _)
+            | ModifiedFile(emitter_id, _, _)
+            | RemovedFile(emitter_id, _)
+            | RenamedFile(emitter_id, _, _) => *emitter_id,
         }
     }
 }
