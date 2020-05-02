@@ -1,5 +1,6 @@
 use crate::client::redis_client::RedisClient;
 use crate::event_handler::file_events::{self, FileEvents};
+use crate::store::local_fs_store::LocalFSStore;
 use crate::store::redis_store::RedisStore;
 use anyhow::Context;
 use log::{debug, error};
@@ -55,57 +56,36 @@ impl RemoteFileEventHandler {
             );
 
             if emitter_id == self.unique_id {
-                debug!("[remote_file] skipping event as we are the emitter")
-            } else {
-                self.handle_event(event_kind, path)
+                debug!("[remote_file] skipping event as we are the emitter");
+                continue;
+            }
+            let handling_result = self.handle_event(event_kind, path);
+            if let Err(error) = handling_result {
+                error!("Error when handling event: {:?}", error)
             }
         }
     }
 
-    fn handle_event(&self, event_kind: &str, path: &str) {
+    fn handle_event(&self, event_kind: &str, path: &str) -> Result<(), anyhow::Error> {
         debug!("[remote_file] got {} with {}", event_kind, path);
 
-        let event = match file_events::FileEvents::from_str(event_kind, &[path]) {
-            Ok(event) => event,
-            Err(error) => {
-                error!("Error when handling event: {:?}", error);
-                return;
-            }
-        };
+        let event = file_events::FileEvents::from_str(event_kind, &[path])
+            .context("unable to convert the event to a known file event")?;
 
         let res = match event {
-            FileEvents::New(path) => self.write_file(path),
-            FileEvents::Modified(path) => self.write_file(path),
-            FileEvents::Removed(path) => self.remove_file(path),
-            FileEvents::Renamed(old, new) => self.rename_file(old, new),
+            FileEvents::New(path) | FileEvents::Modified(path) => {
+                let contents = self.store.get_remote_file_content(&path).with_context(|| {
+                    format!("unable to get from redis file content of {}", &path)
+                })?;
+                LocalFSStore::write_file(path, contents)
+            }
+            FileEvents::Removed(path) => LocalFSStore::remove_file(path),
+            FileEvents::Renamed(old, new) => LocalFSStore::rename_file(old, new),
         };
 
-        if let Err(error) = res {
-            error!("Error when applying event to local fs: {:?}", error);
+        if res.is_err() {
+            return res.context("Error when applying event to local fs");
         }
-    }
-
-    fn remove_file(&self, path: String) -> Result<(), anyhow::Error> {
-        debug!("[remote_file] removing file {}", &path);
-        std::fs::remove_file(&path).with_context(|| format!("unable to remove file {}", &path))
-    }
-
-    fn rename_file(&self, old: String, new: String) -> Result<(), anyhow::Error> {
-        debug!("[remote_file] renaming file from {} to {}", &old, &new);
-        // FIXME: make sure the parent directory exists
-        std::fs::rename(&old, &new)
-            .with_context(|| format!("unable to rename file from {} to {}", &old, &new))
-    }
-
-    fn write_file(&self, path: String) -> Result<(), anyhow::Error> {
-        debug!("[remote_file] writing file {}", &path);
-
-        // FIXME: make sure the parent directory exists
-        let contents = self
-            .store
-            .get_remote_file_content(&path)
-            .with_context(|| format!("unable to get from redis file content of {}", &path))?;
-        std::fs::write(&path, contents)
-            .with_context(|| format!("unable to write on local fs the file {}", &path))
+        Ok(())
     }
 }

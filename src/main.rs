@@ -11,6 +11,7 @@ pub mod event_handler {
     pub mod remote_file;
 }
 pub mod store {
+    pub mod local_fs_store;
     pub mod redis_store;
 }
 pub mod logs;
