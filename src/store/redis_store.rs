@@ -27,13 +27,13 @@ impl RedisStore {
             Some(path) => path,
         };
 
+        let publish_value = RedisPublishValue::from_single_path(emmiter_id, path_as_str);
+
         self.client
             .in_transaction(|| {
                 self.client.set(path_as_str, &content)?;
                 self.client.sadd("file_set", path_as_str)?;
-                // left-pad the emitter id with 0 if needed so that the size is fixed
-                let publish_value = format!("{:0>20}:{}", emmiter_id, path_as_str);
-                self.client.publish(file_events::FILE_NEW, &publish_value)
+                self.client.publish(file_events::FILE_NEW, publish_value.as_str())
             })
             .context("unable to send redis commands to set new file")
     }
@@ -48,13 +48,13 @@ impl RedisStore {
             Some(path) => path,
         };
 
+        let publish_value = RedisPublishValue::from_single_path(emmiter_id, path_as_str);
+
         self.client
             .in_transaction(|| {
                 self.client.set(path_as_str, &content)?;
-                // left-pad the emitter id with 0 if needed so that the size is fixed
-                let publish_value = format!("{:0>20}:{}", emmiter_id, path_as_str);
                 self.client
-                    .publish(file_events::FILE_MODIFIED, &publish_value)
+                    .publish(file_events::FILE_MODIFIED, publish_value.as_str())
             })
             .context("unable to send the redis commands to modify the file")
     }
@@ -73,18 +73,15 @@ impl RedisStore {
             (Some(old_path), Some(new_path)) => (old_path, new_path),
         };
 
+        let publish_value = RedisPublishValue::from_double_path(emmiter_id, old_path_as_str, new_path_as_str);
+
         self.client
             .in_transaction(|| {
                 self.client.rename(old_path_as_str, new_path_as_str)?;
                 self.client
                     .smove("file_set", old_path_as_str, new_path_as_str)?;
-                // left-pad the emitter id with 0 if needed so that the size is fixed
-                let publish_value = format!(
-                    "{:0>20}:{}:{}",
-                    emmiter_id, old_path_as_str, new_path_as_str
-                );
                 self.client
-                    .publish(file_events::FILE_RENAMED, &publish_value)
+                    .publish(file_events::FILE_RENAMED, publish_value.as_str())
             })
             .context("unable to sned the redis commands to rename file")
     }
@@ -98,14 +95,14 @@ impl RedisStore {
             Some(path) => path,
         };
 
+        let publish_value = RedisPublishValue::from_single_path(emmiter_id, path_as_str);
+
         self.client
             .in_transaction(|| {
                 self.client.remove(path_as_str)?;
                 self.client.srem("file_set", path_as_str)?;
-                // left-pad the emitter id with 0 if needed so that the size is fixed
-                let publish_value = format!("{:0>20}:{}", emmiter_id, path_as_str);
                 self.client
-                    .publish(file_events::FILE_REMOVED, &publish_value)
+                    .publish(file_events::FILE_REMOVED, publish_value.as_str())
             })
             .context("unable to send the redis commands to remove file")
     }
@@ -122,5 +119,29 @@ impl RedisStore {
         file.read_to_end(&mut contents)
             .with_context(|| format!("unable to read file {}", path.clone().display()))?;
         Ok(contents)
+    }
+}
+
+struct RedisPublishValue {
+    inner_value: String
+}
+
+impl RedisPublishValue {
+    pub fn from_single_path(emmiter_id: u64, path: &str) -> RedisPublishValue {
+        RedisPublishValue {
+            // left-pad the emitter id with 0 if needed so that the size is fixed
+            inner_value: format!("{:0>20}:{}", emmiter_id, path)
+        }
+    }
+
+    pub fn from_double_path(emmiter_id: u64, first_path: &str, second_path: &str) -> RedisPublishValue {
+        RedisPublishValue {
+            // left-pad the emitter id with 0 if needed so that the size is fixed
+            inner_value: format!("{:0>20}:{}:{}", emmiter_id, first_path, second_path)
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.inner_value
     }
 }
