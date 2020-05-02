@@ -2,7 +2,6 @@ use crate::client::redis_client::{RedisClient, RedisPublishPayload};
 use crate::event_handler::file_events;
 use anyhow::{bail, Context, Result};
 use std::fs::File;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -21,6 +20,7 @@ impl RedisStore {
         let content = self
             .get_local_file_content(path.clone())
             .context("while looking for new file content")?;
+
         let publish_value = RedisPublishPayload::OnePathMessage(emitter_id, path.clone());
         let path_as_str = match path.to_str() {
             None => bail!(
@@ -111,16 +111,29 @@ impl RedisStore {
     }
 
     pub fn get_remote_file_content(&self, path: &Path) -> Result<Vec<u8>> {
-        self.client.get(&path.to_string_lossy())
+        let mut contents: Vec<u8> = Vec::with_capacity(8196);
+        {
+            let compressed_content = self
+                .client
+                .get(&path.to_string_lossy())
+                .context("unable to read compressed file content from redis server")?;
+            let mut decompressing_writer = snap::read::FrameDecoder::new(&*compressed_content);
+            std::io::copy(&mut decompressing_writer, &mut contents)
+                .context("error when decoding compressed content")?;
+        }
+        Ok(contents)
     }
 
     pub fn get_local_file_content(&self, path: PathBuf) -> Result<Vec<u8>> {
         let mut contents: Vec<u8> = Vec::with_capacity(8196);
-        let mut file = File::open(path.clone())
-            .with_context(|| format!("unable to open file {}", path.clone().display()))?;
+        {
+            let mut compressing_writer = snap::write::FrameEncoder::new(&mut contents);
+            let mut file = File::open(path.clone())
+                .with_context(|| format!("unable to open file {}", path.clone().display()))?;
 
-        file.read_to_end(&mut contents)
-            .with_context(|| format!("unable to read file {}", path.clone().display()))?;
+            std::io::copy(&mut file, &mut compressing_writer)
+                .with_context(|| format!("unable to read file {}", path.clone().display()))?;
+        }
         Ok(contents)
     }
 }

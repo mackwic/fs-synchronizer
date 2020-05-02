@@ -17,4 +17,5 @@ r2d2_redis = "0.13.0"
 rand = "0.7"
 rmp-serde = "0.14"
 serde = { version = "1.0", features = ["derive"] }
+snap = "1.0"
 structopt = "0.3"
