@@ -183,7 +183,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fad85553e09a6f881f739c29f0b00b0f01357c743266d478b68951ce23285f3"
 
 [[package]]
-name = "fs-on-redis"
+name = "fs-synchronizer"
 version = "0.1.0"
 dependencies = [
  "anyhow",

@@ -17,7 +17,10 @@ pub mod store {
 pub mod logs;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "fs-on-redis", about = "Synchronize the FS on a Redis DB")]
+#[structopt(
+    name = "fs-synchronizer",
+    about = "Synchronize the FS on a datastore (currently Redis)"
+)]
 struct Opt {
     /// Enable debug logs
     #[structopt(short, long)]
