@@ -1,6 +1,7 @@
 use anyhow::Context;
 use log::debug;
 use std::collections::hash_map::DefaultHasher;
+use std::fs::File;
 use std::hash::Hasher;
 use std::path::Path;
 
@@ -52,10 +53,30 @@ impl LocalFSStore {
         }
     }
 
+    pub fn local_file_content_compressed(path: &Path) -> Result<(Vec<u8>, u64), anyhow::Error> {
+        let mut contents: Vec<u8> = Vec::with_capacity(8196);
+        {
+            let mut compressing_writer = snap::write::FrameEncoder::new(&mut contents);
+            let mut file = File::open(path)
+                .with_context(|| format!("unable to open file {}", path.display()))?;
+
+            std::io::copy(&mut file, &mut compressing_writer)
+                .with_context(|| format!("unable to read file {}", path.display()))?;
+        }
+        let hash = LocalFSStore::local_hash(path)?;
+        Ok((contents, hash))
+    }
+
     pub fn local_hash(path: &Path) -> Result<u64, anyhow::Error> {
         let mut hasher = DefaultHasher::default();
         let contents = std::fs::read(&path).context("unable to read file for hashing")?;
         hasher.write(&*contents);
         Ok(hasher.finish())
+    }
+
+    pub fn hash_content(content: &[u8]) -> u64 {
+        let mut hasher = DefaultHasher::default();
+        hasher.write(&*content);
+        hasher.finish()
     }
 }

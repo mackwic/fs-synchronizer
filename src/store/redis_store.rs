@@ -1,9 +1,6 @@
 use crate::client::redis_client::{RedisClient, RedisPublishPayload};
 use crate::event_handler::file_events;
-use anyhow::{bail, Context, Result};
-use std::collections::hash_map::DefaultHasher;
-use std::fs::File;
-use std::hash::Hasher;
+use anyhow::{bail, Context};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -18,12 +15,13 @@ impl RedisStore {
         RedisStore { client }
     }
 
-    pub fn new_file(&self, emitter_id: u64, path: PathBuf) -> Result<()> {
-        let content = self
-            .get_local_file_content(path.clone())
-            .context("while looking for new file content")?;
-        let hash = self.hash_content(&*content);
-
+    pub fn new_file(
+        &self,
+        emitter_id: u64,
+        path: PathBuf,
+        content: &[u8],
+        hash: u64,
+    ) -> Result<(), anyhow::Error> {
         let publish_value = RedisPublishPayload::NewFile(emitter_id, hash, path.clone());
         let path_as_str = match path.to_str() {
             None => bail!(
@@ -44,11 +42,13 @@ impl RedisStore {
             .context("unable to send redis commands to set new file")
     }
 
-    pub fn modified_file(&self, emitter_id: u64, path: PathBuf) -> Result<()> {
-        let content = self
-            .get_local_file_content(path.clone())
-            .context("while looking for modified file content")?;
-        let hash = self.hash_content(&*content);
+    pub fn modified_file(
+        &self,
+        emitter_id: u64,
+        path: PathBuf,
+        content: &[u8],
+        hash: u64,
+    ) -> Result<(), anyhow::Error> {
         let publish_value = RedisPublishPayload::ModifiedFile(emitter_id, hash, path.clone());
         let path_as_str = match path.to_str() {
             None => bail!(
@@ -74,7 +74,7 @@ impl RedisStore {
         emitter_id: u64,
         old_path: PathBuf,
         new_path: PathBuf,
-    ) -> Result<()> {
+    ) -> Result<(), anyhow::Error> {
         let publish_value =
             RedisPublishPayload::RenamedFile(emitter_id, old_path.clone(), new_path.clone());
         let (old_path_as_str, new_path_as_str)  = match (old_path.to_str(), new_path.to_str()) {
@@ -102,7 +102,7 @@ impl RedisStore {
             .context("unable to sned the redis commands to rename file")
     }
 
-    pub fn removed_file(&self, emitter_id: u64, path: PathBuf) -> Result<()> {
+    pub fn removed_file(&self, emitter_id: u64, path: PathBuf) -> Result<(), anyhow::Error> {
         let publish_value = RedisPublishPayload::RemovedFile(emitter_id, path.clone());
         let path_as_str = match path.to_str() {
             None => bail!(
@@ -121,13 +121,13 @@ impl RedisStore {
             .context("unable to send the redis commands to remove file")
     }
 
-    pub fn get_all_remote_files(&self) -> Result<Vec<String>> {
+    pub fn get_all_remote_files(&self) -> Result<Vec<String>, anyhow::Error> {
         self.client
             .smembers(SET_OF_ALL_FILES_NAME)
             .context("unable to send the redis command to list all the files")
     }
 
-    pub fn get_remote_file_content(&self, path: &Path) -> Result<Vec<u8>> {
+    pub fn get_remote_file_content(&self, path: &Path) -> Result<Vec<u8>, anyhow::Error> {
         let mut contents: Vec<u8> = Vec::with_capacity(8196);
         {
             let compressed_content = self
@@ -141,7 +141,7 @@ impl RedisStore {
         Ok(contents)
     }
 
-    pub fn get_remote_file_hash(&self, path: &Path) -> Result<u64> {
+    pub fn get_remote_file_hash(&self, path: &Path) -> Result<u64, anyhow::Error> {
         let raw_num = self
             .client
             .get(&self.to_hash_key(&path.to_string_lossy()))
@@ -158,30 +158,11 @@ impl RedisStore {
         Ok(hash)
     }
 
-    pub fn get_local_file_content(&self, path: PathBuf) -> Result<Vec<u8>> {
-        let mut contents: Vec<u8> = Vec::with_capacity(8196);
-        {
-            let mut compressing_writer = snap::write::FrameEncoder::new(&mut contents);
-            let mut file = File::open(path.clone())
-                .with_context(|| format!("unable to open file {}", path.clone().display()))?;
-
-            std::io::copy(&mut file, &mut compressing_writer)
-                .with_context(|| format!("unable to read file {}", path.clone().display()))?;
-        }
-        Ok(contents)
-    }
-
     fn to_hash_key(&self, path: &str) -> String {
         format!("hash:{}", path)
     }
 
     fn to_content_key(&self, path: &str) -> String {
         format!("content:{}", path)
-    }
-
-    fn hash_content(&self, content: &[u8]) -> u64 {
-        let mut hasher = DefaultHasher::default();
-        hasher.write(&*content);
-        hasher.finish()
     }
 }

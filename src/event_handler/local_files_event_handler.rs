@@ -1,8 +1,9 @@
+use crate::store::local_fs_store::LocalFSStore;
 use crate::store::redis_store::RedisStore;
 use anyhow::{anyhow, Context, Result};
 use log::{debug, error};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -52,14 +53,21 @@ impl LocalFilesEventHandler {
                     debug!("path is directory, skipping (path={})", path.display());
                     return;
                 }
-                self.store.new_file(self.unique_id, path)
+                self.get_file_content_and_hash(&path)
+                    .and_then(|(content, hash)| {
+                        self.store.new_file(self.unique_id, path, &*content, hash)
+                    })
             }
             Write(path) => {
                 if path.is_dir() {
                     debug!("path is directory, skipping (path={})", path.display());
                     return;
                 }
-                self.store.modified_file(self.unique_id, path)
+                self.get_file_content_and_hash(&path)
+                    .and_then(|(content, hash)| {
+                        self.store
+                            .modified_file(self.unique_id, path, &*content, hash)
+                    })
             }
             Remove(path) => self.store.removed_file(self.unique_id, path),
             Rename(old_path, new_path) => {
@@ -98,5 +106,12 @@ impl LocalFilesEventHandler {
                 Err(e) => panic!("FATAL ERROR with the channel: {:?}", e),
             }
         }
+    }
+
+    fn get_file_content_and_hash(&self, path: &Path) -> Result<(Vec<u8>, u64), anyhow::Error> {
+        let (contents, hash) = LocalFSStore::local_file_content_compressed(path)
+            .context("while looking for new file content")?;
+        debug!("[local_file] file hash is {}", hash);
+        Ok((contents, hash))
     }
 }
