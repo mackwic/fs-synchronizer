@@ -1,6 +1,6 @@
 [package]
 name = "fs-synchronizer"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Thomas Wickham <mackwic@gmail.com>"]
 edition = "2018"
 
