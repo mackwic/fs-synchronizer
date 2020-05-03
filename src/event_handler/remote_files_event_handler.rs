@@ -3,7 +3,7 @@ use crate::event_handler::file_events::{self, FileEvents};
 use crate::store::local_fs_store::LocalFSStore;
 use crate::store::redis_store::RedisStore;
 use anyhow::Context;
-use log::{debug, error};
+use log::{debug, error, info};
 use std::path::PathBuf;
 use std::thread::JoinHandle;
 
@@ -36,8 +36,20 @@ impl RemoteFilesEventHandler {
             // XXX remote hash reading is non-fatal. Anything could be in redis.
             // local hash reading is also non-fatal. Maybe the file is not there. We will try to write it to see.
             // In any case, hust use a dummy default value
-            let remote_hash = self.store.get_remote_file_hash(&path).unwrap_or(0);
-            let local_hash = LocalFSStore::local_hash(&path).unwrap_or(1);
+            let remote_hash = self
+                .store
+                .get_remote_file_hash(&path)
+                .unwrap_or_else(|err| {
+                    info!("non-fatal error when fetching the remote hash. Using dummy value. Error: {:?}", err);
+                    0
+                });
+            let local_hash = LocalFSStore::local_hash(&path).unwrap_or_else(|err| {
+                info!(
+                    "non-fatal error when fetching the local hash. Using dummy value. Error: {:?}",
+                    err
+                );
+                1
+            });
 
             if remote_hash == local_hash {
                 debug!("[remote_file] local hash matches remote hash. Skipping file.");
